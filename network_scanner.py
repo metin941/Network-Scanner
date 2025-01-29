@@ -122,6 +122,9 @@ class NetworkScannerApp:
         self.ip_result_text = scrolledtext.ScrolledText(self.root, width=100, height=15)
         self.ip_result_text.place(x=10, y=420)
 
+        # Setup the tag for highlighting
+        self.result_text.tag_configure("highlight", background="yellow")
+
     def scan_network(self):
         ip = self.ip_entry.get()
         if not ip:

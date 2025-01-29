@@ -241,7 +241,7 @@ class NetworkScannerApp:
         
         # Function to open the GitHub page when the label is clicked
         def open_github(event):
-            webbrowser.open("https://github.com/metin941/netowrk-scanner")  # Replace with your GitHub URL
+            webbrowser.open("https://github.com/metin941/Network-Scanner")  # Replace with your GitHub URL
 
         # Create the label
         label = tk.Label(

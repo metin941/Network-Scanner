@@ -4,6 +4,368 @@ from tkinter import messagebox, scrolledtext
 from tkinter import PhotoImage
 import subprocess
 import webbrowser
+import paramiko
+import os
+import logging
+import tkinter as tk
+from tkinter import Tk
+from tkinter import Tk, Label, Entry, Button, Text, END, PhotoImage, filedialog
+from tkinter import filedialog, messagebox
+from tkinter import PhotoImage
+from scp import SCPClient
+import configparser
+from tkinter import *
+from tkinter.ttk import Progressbar
+
+
+class FirmwareTool:
+
+    def __init__(self):
+        self.config = configparser.ConfigParser()
+        self.config_file = 'config.ini'
+        self.target_directory = "/opt/sysone/s1pdata/fwupgrade"
+
+        # Create the main Tkinter window
+        self.root = Tk()
+        self.root.title("Firmware Multi Tool")
+        self.root.geometry("600x425")
+        self.root.resizable(False, False)
+        blank_icon = PhotoImage(width=1, height=1)
+
+        self.init_widgets()
+
+    def init_widgets(self):
+        # Hostname (Device IP)
+        hostname_label = Label(self.root, text="Device IP:")
+        hostname_label.place(x=10, y=14)
+        self.hostname_entry = Entry(self.root, width=20)
+        self.hostname_entry.place(x=80, y=14)
+        self.add_tooltip(self.hostname_entry, "Enter a specific Device IP address (e.g., 10.170.194.179)")
+
+        # Upload Button
+        upload_button = Button(self.root, text="Upload Firmware File", command=self.connect_and_upload)
+        upload_button.place(x=300, y=10)
+        self.add_tooltip(upload_button, "Upload FW file to the selected device")
+
+        # Create Ready File Button
+        ready_button = Button(self.root, text="Upgrade", command=self.create_ready_file)
+        ready_button.place(x=440, y=10)
+        self.add_tooltip(ready_button, "Start upgrading FW. Device will restart itself.")
+
+        # Clear Log Button
+        clear_button = Button(self.root, text="Clear Log", command=self.clear_log)
+        clear_button.place(x=10, y=380)
+
+        # Send fs-print Command Button
+        send_command_button = Button(self.root, text="Device info", command=self.send_fs_print_command)
+        send_command_button.place(x=220, y=10)
+        self.add_tooltip(send_command_button, "Print selected device information")
+
+        # Create Config File Button
+        create_config_button = Button(self.root, text="Select key", command=self.create_or_update_config)
+        create_config_button.place(x=510, y=10)
+        self.add_tooltip(create_config_button, "Select the key to enter the device")
+
+        # Set Environment Button
+        set_env_button = Button(self.root, text="Set env to 'Development'", command=self.set_development_environment)
+        set_env_button.place(x=220, y=50)
+        self.add_tooltip(set_env_button, "Set the target environment to development")
+
+        # Progress bar for file transfer
+        self.progress_bar = Progressbar(self.root, length=565, orient=HORIZONTAL, mode='determinate')
+        self.progress_bar.place(x=10, y=350)
+
+        # Terminal Output
+        self.terminal = Text(self.root, height=15, width=70, state='normal')
+        self.terminal.place(x=10, y=90)
+
+    def add_tooltip(self, widget, text):
+        ToolTip(widget, text)
+
+    def append_to_terminal(self, message):
+        self.terminal.insert(END, message + "\n")
+        self.terminal.see(END)
+
+    def create_or_update_config(self):
+        key_path = filedialog.askopenfilename(title="Select Private Key",
+                                              filetypes=(("PEM files", "*.pem"), ("All files", "*.*")))
+        if not key_path:
+            messagebox.showerror("Error", "No key file selected!")
+            return
+
+        if not os.path.exists(self.config_file):
+            with open(self.config_file, 'w') as f:
+                f.write("[settings]\n")
+
+        self.config.read(self.config_file)
+        if not self.config.has_section('settings'):
+            self.config.add_section('settings')
+
+        self.config.set('settings', 'key_path', key_path)
+        with open(self.config_file, 'w') as configfile:
+            self.config.write(configfile)
+
+        self.append_to_terminal(f"Config file '{self.config_file}' updated with key_path: {key_path}")
+        messagebox.showinfo("Config", f"Config file updated with key_path: {key_path}")
+
+    def connect_and_upload(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        # Select a file to upload (this file will be modified to contain only the selected device type string)
+        file_path = filedialog.askopenfilename(title="Select File to Upload")
+        if not file_path:
+            messagebox.showerror("Error", "No file selected!")
+            return
+
+        try:
+            # Open the selected file and write the device type string into it
+            device_type = "ExampleDeviceType"  # You need to define or select device type
+            with open(file_path, 'w') as f:
+                f.write(device_type)
+
+            self.append_to_terminal(f"File content replaced with the selected device type: {device_type}")
+
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # Initialize the progress bar
+            file_size = os.path.getsize(file_path)
+            self.progress_bar['value'] = 0
+            self.progress_bar['maximum'] = file_size
+
+            # Define the SCP callback to update the progress bar
+            def progress(filename, size, sent):
+                self.progress_bar['value'] = sent
+                self.root.update_idletasks()
+
+            # SCP file upload with progress callback
+            self.append_to_terminal(f"Uploading file to {self.target_directory}... Device: {device_type}")
+            target_path = os.path.join(self.target_directory, os.path.basename(file_path)).replace("\\", "/")
+            with SCPClient(ssh.get_transport(), progress=progress) as scp:
+                scp.put(file_path, target_path)
+
+            self.append_to_terminal(f"File uploaded successfully to {target_path}")
+
+            # Verify file exists on the remote system
+            check_file_command = f"test -f {target_path} && echo 'File exists' || echo 'File does not exist'"
+            stdin, stdout, stderr = ssh.exec_command(check_file_command)
+            file_check_result = stdout.read().decode().strip()
+
+            if file_check_result == "File exists":
+                self.append_to_terminal(f"Verification successful: {target_path} exists on the remote device.")
+                messagebox.showinfo("Success", f"File uploaded and verified successfully to {target_path}")
+            else:
+                self.append_to_terminal(f"Error: {target_path} does not exist on the remote device.")
+                messagebox.showerror("Error", f"File upload verification failed!")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to upload file: {e}")
+
+    def create_ready_file(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+        target_file = "/opt/sysone/s1pdata/fwupgrade/fw_update.ready"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Read key_path from the config file
+            try:
+                self.config.read(self.config_file)
+                key_path = self.config.get('settings', 'key_path')
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+                return
+
+            if not key_path:
+                messagebox.showerror("Error", "No key path found in config file!")
+                return
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = f"touch {target_file}"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"File {target_file} created successfully!")
+            messagebox.showinfo("Success", f"File {target_file} created successfully!")
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to create file: {e}")
+
+    def send_fs_print_command(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # Send the fs-print command
+            command = "fs-print"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+            messagebox.showinfo("Success", f"Command executed successfully, output printed in terminal.")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def set_development_environment(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # Send the fw_setenv command
+            command = "fw_setenv target_env development"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+            messagebox.showinfo("Success", f"Command executed successfully, target environment set to development!")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def clear_log(self):
+        self.terminal.delete(1.0, tk.END)  # Delete all content in the Text widget
+        self.append_to_terminal("Log cleared!")
 
 class ToolTip:
     def __init__(self, widget, text, x_offset=5, y_offset=5, position='right'):
@@ -59,6 +421,18 @@ class NetworkScannerApp:
 
         # Add a styled copyright label
         self.create_copyright_label()
+
+        # Menu bar for additional tools (including your menu snippet)
+        menu_bar = tk.Menu(self.root)
+        tools_menu = tk.Menu(menu_bar, tearoff=0)
+        tools_menu.add_command(label="Firmware Multi tool", command=self.open_firmware_update_tool)
+        menu_bar.add_cascade(label="Tools", menu=tools_menu)
+        self.root.config(menu=menu_bar)
+
+    def open_firmware_update_tool(self):
+        # This will open the Firmware Tool window
+        firmware_tool = FirmwareTool()
+        firmware_tool.run()  # This will start the firmware tool's GUI
 
     def check_nmap_installed(self):
         try:
@@ -240,7 +614,7 @@ class NetworkScannerApp:
         return "\n".join(formatted_lines)
 
     def create_copyright_label(self):
-        copyright_text = "v1.1 © M.Hasanov 2025"
+        copyright_text = "v1.2 © M.Hasanov 2025"
         
         # Function to open the GitHub page when the label is clicked
         def open_github(event):
@@ -270,6 +644,7 @@ root.geometry("850x690")
 root.resizable(False, False)
 blank_icon = PhotoImage(width=1, height=1)
 root.iconphoto(True, blank_icon)
+
 # Create the app instance
 app = NetworkScannerApp(root)
 

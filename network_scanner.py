@@ -1,22 +1,14 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import *
 from tkinter import messagebox, scrolledtext
-from tkinter import PhotoImage
+from tkinter.ttk import Progressbar
 import subprocess
 import webbrowser
 import paramiko
 import os
 import logging
-import tkinter as tk
-from tkinter import Tk
-from tkinter import Tk, Label, Entry, Button, Text, END, PhotoImage, filedialog
-from tkinter import filedialog, messagebox
-from tkinter import PhotoImage
 from scp import SCPClient
 import configparser
-from tkinter import *
-from tkinter.ttk import Progressbar
-
 
 class FirmwareTool:
 

@@ -129,12 +129,6 @@ class FirmwareTool:
             return
 
         try:
-            # Open the selected file and write the device type string into it
-            device_type = "ExampleDeviceType"  # You need to define or select device type
-            with open(file_path, 'w') as f:
-                f.write(device_type)
-
-            self.append_to_terminal(f"File content replaced with the selected device type: {device_type}")
 
             self.append_to_terminal("Connecting to device...")
 
@@ -157,7 +151,7 @@ class FirmwareTool:
                 self.root.update_idletasks()
 
             # SCP file upload with progress callback
-            self.append_to_terminal(f"Uploading file to {self.target_directory}... Device: {device_type}")
+            self.append_to_terminal(f"Uploading file to {self.target_directory}....")
             target_path = os.path.join(self.target_directory, os.path.basename(file_path)).replace("\\", "/")
             with SCPClient(ssh.get_transport(), progress=progress) as scp:
                 scp.put(file_path, target_path)

@@ -10,6 +10,7 @@ import os
 import logging
 from scp import SCPClient
 import configparser
+import time
 
 class FirmwareTool:
 
@@ -63,6 +64,11 @@ class FirmwareTool:
         set_env_button = Button(self.root, text="Set env to 'Development'", command=self.set_development_environment)
         set_env_button.place(x=220, y=50)
         self.add_tooltip(set_env_button, "Set the target environment to development")
+
+        # Set Environment Button
+        factory_reset_button = Button(self.root, text="Factory reset NGA", command=self.factory_reset)
+        factory_reset_button.place(x=380, y=50)
+        self.add_tooltip(factory_reset_button, "Factory reset NGA device")
 
         # Progress bar for file transfer
         self.progress_bar = Progressbar(self.root, length=565, orient=HORIZONTAL, mode='determinate')
@@ -353,6 +359,82 @@ class FirmwareTool:
     def clear_log(self):
         self.terminal.delete(1.0, tk.END)  # Delete all content in the Text widget
         self.append_to_terminal("Log cleared!")
+
+    def factory_reset(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # First command: touch /data/.factory-reset
+            command1 = "touch /data/.factory-reset"
+            self.append_to_terminal(f"Executing command: {command1}")
+            stdin, stdout, stderr = ssh.exec_command(command1)
+
+            output1 = stdout.read().decode()
+            error1 = stderr.read().decode()
+
+            if error1:
+                self.append_to_terminal(f"Error: {error1}")
+                raise Exception(error1)
+
+            self.append_to_terminal(f"Command Output: {output1}")
+
+            # Wait for 1000ms
+            time.sleep(1)
+
+            # Second command: reboot
+            command2 = "reboot"
+            self.append_to_terminal(f"Executing command: {command2}")
+            stdin, stdout, stderr = ssh.exec_command(command2)
+
+            output2 = stdout.read().decode()
+            error2 = stderr.read().decode()
+
+            if error2:
+                self.append_to_terminal(f"Error: {error2}")
+                raise Exception(error2)
+
+            self.append_to_terminal(f"Command Output: {output2}")
+            messagebox.showinfo("Success", "Commands executed successfully!")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute commands: {e}")
+        finally:
+            ssh.close()
 
 class ToolTip:
     def __init__(self, widget, text, x_offset=5, y_offset=5, position='right'):

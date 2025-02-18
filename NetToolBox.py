@@ -13,6 +13,30 @@ import configparser
 import time
 import re
 
+class InfoWin:
+    def __init__(self):
+        self.root = Tk()
+        self.root.title("Tool info")
+        self.root.geometry("400x400")
+        self.root.resizable(False, False)
+        blank_icon = PhotoImage(width=1, height=1)
+
+        self.init_widgets()
+
+    def init_widgets(self):
+        info_text = (
+            "⚠️WARNING⚠️ This tool is intended for testing purposes only. Please use it with caution, "
+            "as improper use may cause harm or disrupt devices on the network.\n\n"
+            "This tool is designed for scanning devices on a target network using Nmap, "
+            "providing real-time information on IP addresses, device statuses, and more.\n \n"
+            "Additionally, the tool includes a Device Toolbox"
+            "that offers basic but useful operations for interacting with and manipulating "
+            "scanned devices, making it an all-in-one utility for network management and security tasks.\n \n"
+            "For more info:↪ metin.hasanov@siemens.com ↩"
+        )
+        dev_info_label = Label(self.root, text=info_text, justify=LEFT, wraplength=380)  # Wrap text within the window
+        dev_info_label.place(x=15, y=24)
+
 class FirmwareTool:
 
     def __init__(self):
@@ -22,7 +46,7 @@ class FirmwareTool:
 
         # Create the main Tkinter window
         self.root = Tk()
-        self.root.title("Firmware Multi Tool")
+        self.root.title("Device ToolBox")
         self.root.geometry("1305x820")
         self.root.resizable(False, False)
         blank_icon = PhotoImage(width=1, height=1)
@@ -754,14 +778,19 @@ class NetworkScannerApp:
         # Menu bar for additional tools (including your menu snippet)
         menu_bar = tk.Menu(self.root)
         tools_menu = tk.Menu(menu_bar, tearoff=0)
-        tools_menu.add_command(label="Firmware Multi tool", command=self.open_firmware_update_tool)
+        tools_menu.add_command(label="Device ToolBox", command=self.open_firmware_update_tool)
         menu_bar.add_cascade(label="Tools", menu=tools_menu)
+        menu_bar.add_cascade(label="Info", command=self.open_info)
         self.root.config(menu=menu_bar)
 
     def open_firmware_update_tool(self):
         # This will open the Firmware Tool window
         firmware_tool = FirmwareTool()
         firmware_tool.run()  # This will start the firmware tool's GUI
+
+    def open_info(self):
+        info_window = InfoWin()
+        info_window.run()
 
     def check_nmap_installed(self):
         try:
@@ -968,7 +997,7 @@ class NetworkScannerApp:
 
 # Create the GUI window
 root = tk.Tk()
-root.title("Siemens Network Device Scanner")
+root.title("Siemens NetToolBox")
 root.geometry("850x690")
 root.resizable(False, False)
 blank_icon = PhotoImage(width=1, height=1)

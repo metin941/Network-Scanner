@@ -11,6 +11,7 @@ import logging
 from scp import SCPClient
 import configparser
 import time
+import re
 
 class FirmwareTool:
 
@@ -22,68 +23,119 @@ class FirmwareTool:
         # Create the main Tkinter window
         self.root = Tk()
         self.root.title("Firmware Multi Tool")
-        self.root.geometry("600x425")
+        self.root.geometry("1305x820")
         self.root.resizable(False, False)
         blank_icon = PhotoImage(width=1, height=1)
 
         self.init_widgets()
 
     def init_widgets(self):
+        # Create a bordered frame for categorized buttons
+        frame_ip = LabelFrame(self.root, text="Target Device", padx=10, pady=10)
+        frame_ip.place(x=10, y=0, width=225, height=85)
+
         # Hostname (Device IP)
         hostname_label = Label(self.root, text="Device IP:")
-        hostname_label.place(x=10, y=14)
+        hostname_label.place(x=15, y=24)
         self.hostname_entry = Entry(self.root, width=20)
-        self.hostname_entry.place(x=80, y=14)
+        self.hostname_entry.place(x=85, y=24)
         self.add_tooltip(self.hostname_entry, "Enter a specific Device IP address (e.g., 10.170.194.179)")
+
+        # Create a bordered frame for categorized buttons
+        button_frame_fw = LabelFrame(self.root, text="Firmware Uplad & Upgrade", padx=10, pady=10)
+        button_frame_fw.place(x=240, y=0, width=210, height=85)
+
+        # Create a bordered frame for categorized buttons
+        button_frame_device = LabelFrame(self.root, text="Device Actions", padx=10, pady=10)
+        button_frame_device.place(x=455, y=0, width=330, height=85)
+
+        # Create a bordered frame for categorized buttons
+        button_frame_key = LabelFrame(self.root, text="Device SSH Key", padx=10, pady=10)
+        button_frame_key.place(x=790, y=0, width=100, height=85)
 
         # Upload Button
         upload_button = Button(self.root, text="Upload Firmware File", command=self.connect_and_upload)
-        upload_button.place(x=300, y=10)
+        upload_button.place(x=250, y=20)
         self.add_tooltip(upload_button, "Upload FW file to the selected device")
 
         # Create Ready File Button
         ready_button = Button(self.root, text="Upgrade", command=self.create_ready_file)
-        ready_button.place(x=440, y=10)
+        ready_button.place(x=380, y=20)
         self.add_tooltip(ready_button, "Start upgrading FW. Device will restart itself.")
 
         # Clear Log Button
         clear_button = Button(self.root, text="Clear Log", command=self.clear_log)
-        clear_button.place(x=10, y=380)
+        clear_button.place(x=10, y=780)
 
         # Send fs-print Command Button
         send_command_button = Button(self.root, text="Device info", command=self.send_fs_print_command)
-        send_command_button.place(x=220, y=10)
+        send_command_button.place(x=465, y=20)
         self.add_tooltip(send_command_button, "Print selected device information")
 
         # Create Config File Button
         create_config_button = Button(self.root, text="Select key", command=self.create_or_update_config)
-        create_config_button.place(x=510, y=10)
+        create_config_button.place(x=800, y=20, width=80)
         self.add_tooltip(create_config_button, "Select the key to enter the device")
 
         # Set Environment Button
-        set_env_button = Button(self.root, text="Set env to 'Development'", command=self.set_development_environment)
-        set_env_button.place(x=220, y=50)
+        set_env_button = Button(self.root, text="Set env to 'Dev'", command=self.set_development_environment)
+        set_env_button.place(x=685, y=52)
         self.add_tooltip(set_env_button, "Set the target environment to development")
 
-        # Set Environment Button
         factory_reset_button = Button(self.root, text="Factory reset NGA", command=self.factory_reset)
-        factory_reset_button.place(x=380, y=50)
+        factory_reset_button.place(x=465, y=52)
         self.add_tooltip(factory_reset_button, "Factory reset NGA device")
 
+        factory_reset_button_rau = Button(self.root, text="Factory reset RAU", command=self.factory_reset_rau)
+        factory_reset_button_rau.place(x=575, y=52)
+        self.add_tooltip(factory_reset_button_rau, "Factory reset RAU device")
+
+        journal_log_button = Button(self.root, text="Print Debug NGA", command=self.print_journalctl)
+        journal_log_button.place(x=545, y=20)
+        self.add_tooltip(journal_log_button, "Print last debug logs from NGA device")
+
+        journal_log_button_rau = Button(self.root, text="Print Debug RAU", command=self.print_journalctl_rau)
+        journal_log_button_rau.place(x=655, y=20)
+        self.add_tooltip(journal_log_button_rau, "Print last debug logs from RAU device")
+
         # Progress bar for file transfer
-        self.progress_bar = Progressbar(self.root, length=565, orient=HORIZONTAL, mode='determinate')
-        self.progress_bar.place(x=10, y=350)
+        self.progress_bar = Progressbar(self.root, length=1280, orient=HORIZONTAL, mode='determinate')
+        self.progress_bar.place(x=10, y=750)
 
         # Terminal Output
-        self.terminal = Text(self.root, height=15, width=70, state='normal')
+        self.terminal = Text(self.root, height=40, width=160, state='normal')
         self.terminal.place(x=10, y=90)
 
     def add_tooltip(self, widget, text):
         ToolTip(widget, text)
 
     def append_to_terminal(self, message):
-        self.terminal.insert(END, message + "\n")
-        self.terminal.see(END)
+        # Define color tag for errors
+        self.terminal.tag_config("error", foreground="red")
+
+        # Regular expression to find "error" or "failed" (case insensitive)
+        pattern = re.compile(r"\b(error|failed)\b", re.IGNORECASE)
+
+        # Start inserting text with selective highlighting
+        start_index = 0  # Keeps track of position in the message
+        for match in pattern.finditer(message):
+            start, end = match.span()  # Get start and end index of the match
+
+            # Insert text before the match (normal text)
+            if start_index < start:
+                self.terminal.insert(END, message[start_index:start])
+
+            # Insert the matched keyword with red highlight
+            self.terminal.insert(END, message[start:end], "error")
+
+            start_index = end  # Move index forward
+
+        # Insert any remaining text after the last match
+        if start_index < len(message):
+            self.terminal.insert(END, message[start_index:])
+
+        self.terminal.insert(END, "\n")  # Add newline
+        self.terminal.see(END)  # Auto-scroll to latest message
 
     def create_or_update_config(self):
         key_path = filedialog.askopenfilename(title="Select Private Key",
@@ -436,6 +488,214 @@ class FirmwareTool:
         finally:
             ssh.close()
 
+    def print_journalctl(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # Execute command
+            command1 = "journalctl -b0"
+            self.append_to_terminal(f"Executing command: {command1}")
+            stdin, stdout, stderr = ssh.exec_command(command1)
+
+            output1 = stdout.read().decode()
+            error1 = stderr.read().decode()
+
+            if error1:
+                self.append_to_terminal(f"Error: {error1}")
+                raise Exception(error1)
+
+            # Highlight lines containing the keyword "failed" in red
+            highlighted_output = ""
+            for line in output1.splitlines():
+                if "failed:" in line.lower():  # Case-insensitive match
+                    highlighted_output += f"\033[91m{line}\033[0m\n"  # ANSI escape code for red
+                else:
+                    highlighted_output += f"{line}\n"
+
+            self.append_to_terminal("Command Output:\n" + highlighted_output)
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute commands: {e}")
+        finally:
+            ssh.close()
+
+    def print_journalctl_rau(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # Execute command
+            command1 = "cat /var/log/messages"
+            self.append_to_terminal(f"Executing command: {command1}")
+            stdin, stdout, stderr = ssh.exec_command(command1)
+
+            output1 = stdout.read().decode()
+            error1 = stderr.read().decode()
+
+            if error1:
+                self.append_to_terminal(f"Error: {error1}")
+                raise Exception(error1)
+
+            # Highlight lines containing the keyword "failed" in red
+            highlighted_output = ""
+            for line in output1.splitlines():
+                if "failed:" in line.lower():  # Case-insensitive match
+                    highlighted_output += f"\033[91m{line}\033[0m\n"  # ANSI escape code for red
+                else:
+                    highlighted_output += f"{line}\n"
+
+            self.append_to_terminal("Command Output:\n" + highlighted_output)
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute commands: {e}")
+        finally:
+            ssh.close()
+
+    def factory_reset_rau(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # First command: touch /data/.factory-reset
+            command1 = "/opt/sysone/s1exe/etc/unconfigure.sh"
+            self.append_to_terminal(f"Executing command: {command1}")
+            stdin, stdout, stderr = ssh.exec_command(command1)
+
+            output1 = stdout.read().decode()
+            error1 = stderr.read().decode()
+
+            if error1:
+                self.append_to_terminal(f"Error: {error1}")
+                raise Exception(error1)
+
+            self.append_to_terminal(f"Command Output: {output1}")
+
+            # Wait for 1000ms
+            time.sleep(1)
+
+            # Second command: reboot
+            command2 = "reboot"
+            self.append_to_terminal(f"Executing command: {command2}")
+            stdin, stdout, stderr = ssh.exec_command(command2)
+
+            output2 = stdout.read().decode()
+            error2 = stderr.read().decode()
+
+            if error2:
+                self.append_to_terminal(f"Error: {error2}")
+                raise Exception(error2)
+
+            self.append_to_terminal(f"Command Output: {output2}")
+            messagebox.showinfo("Success", "Commands executed successfully!")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute commands: {e}")
+        finally:
+            ssh.close()
+
 class ToolTip:
     def __init__(self, widget, text, x_offset=5, y_offset=5, position='right'):
         self.widget = widget
@@ -683,7 +943,7 @@ class NetworkScannerApp:
         return "\n".join(formatted_lines)
 
     def create_copyright_label(self):
-        copyright_text = "v1.2 © M.Hasanov 2025"
+        copyright_text = "v1.4 © M.Hasanov 2025"
         
         # Function to open the GitHub page when the label is clicked
         def open_github(event):

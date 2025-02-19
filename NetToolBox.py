@@ -51,7 +51,13 @@ class FirmwareTool:
         self.root.resizable(False, False)
         blank_icon = PhotoImage(width=1, height=1)
 
+        self.init_menubar()
         self.init_widgets()
+    
+    def init_menubar(self):
+        menubar = Menu(self.root)
+        menubar.add_cascade(label="Select ssh key", command=self.create_or_update_config)
+        self.root.config(menu=menubar)
 
     def init_widgets(self):
         # Create a bordered frame for categorized buttons
@@ -71,11 +77,11 @@ class FirmwareTool:
 
         # Create a bordered frame for categorized buttons
         button_frame_device = LabelFrame(self.root, text="Device Actions", padx=10, pady=10)
-        button_frame_device.place(x=455, y=0, width=330, height=85)
+        button_frame_device.place(x=455, y=0, width=420, height=85)
 
         # Create a bordered frame for categorized buttons
-        button_frame_key = LabelFrame(self.root, text="Device SSH Key", padx=10, pady=10)
-        button_frame_key.place(x=790, y=0, width=100, height=85)
+        button_frame_key = LabelFrame(self.root, text="Device network", padx=10, pady=10)
+        button_frame_key.place(x=880, y=0, width=285, height=85)
 
         # Upload Button
         upload_button = Button(self.root, text="Upload Firmware File", command=self.connect_and_upload)
@@ -95,11 +101,6 @@ class FirmwareTool:
         send_command_button = Button(self.root, text="Device info", command=self.send_fs_print_command)
         send_command_button.place(x=465, y=20)
         self.add_tooltip(send_command_button, "Print selected device information")
-
-        # Create Config File Button
-        create_config_button = Button(self.root, text="Select key", command=self.create_or_update_config)
-        create_config_button.place(x=800, y=20, width=80)
-        self.add_tooltip(create_config_button, "Select the key to enter the device")
 
         # Set Environment Button
         set_env_button = Button(self.root, text="Set env to 'Dev'", command=self.set_development_environment)
@@ -121,6 +122,34 @@ class FirmwareTool:
         journal_log_button_rau = Button(self.root, text="Print Debug RAU", command=self.print_journalctl_rau)
         journal_log_button_rau.place(x=655, y=20)
         self.add_tooltip(journal_log_button_rau, "Print last debug logs from RAU device")
+
+        button_wlan_enable = Button(self.root, text="Enable WLAN", command=self.wlan_enable)
+        button_wlan_enable.place(x=890, y=20)
+        self.add_tooltip(button_wlan_enable, "Enable WLAN port on target device")
+
+        button_wlan_info = Button(self.root, text="WLAN Info", command=self.wlan_info)
+        button_wlan_info.place(x=1075, y=20)
+        self.add_tooltip(button_wlan_info, "Get WLAN port information\n enable port for more info...")
+
+        button_wlan_disable = Button(self.root, text="Disable WLAN", command=self.wlan_disable)
+        button_wlan_disable.place(x=980, y=20)
+        self.add_tooltip(button_wlan_disable, "Disable WLAN port on target device")
+
+        button_cloud_enable = Button(self.root, text="Enable Cloud", state="disabled")
+        button_cloud_enable.place(x=890, y=52)
+        self.add_tooltip(button_cloud_enable, "")
+
+        button_cloud_disable = Button(self.root, text="Disable Cloud", state="disabled")
+        button_cloud_disable.place(x=980, y=52)
+        self.add_tooltip(button_cloud_disable, "")
+
+        button_cloud_info = Button(self.root, text="Cloud info", command=self.cloud_info)
+        button_cloud_info.place(x=1075, y=52)
+        self.add_tooltip(button_cloud_info, "Cloud service info")
+
+        button_services_info = Button(self.root, text="Print services", command=self.print_all_active_services)
+        button_services_info.place(x=765, y=20)
+        self.add_tooltip(button_services_info, "Print all active services on target device")
 
         # Progress bar for file transfer
         self.progress_bar = Progressbar(self.root, length=1280, orient=HORIZONTAL, mode='determinate')
@@ -363,7 +392,6 @@ class FirmwareTool:
                 raise Exception(error)
 
             self.append_to_terminal(f"Command Output: {output}")
-            messagebox.showinfo("Success", f"Command executed successfully, output printed in terminal.")
 
         except paramiko.ssh_exception.AuthenticationException:
             self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
@@ -719,6 +747,396 @@ class FirmwareTool:
             messagebox.showerror("Error", f"Failed to execute commands: {e}")
         finally:
             ssh.close()
+
+    def wlan_enable(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            # Send the fs-print command
+            command = "ccp-wifi-on"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+            messagebox.showinfo("Success", f"Command executed successfully, output printed in terminal.")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def wlan_disable(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = "ccp-wifi-off"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+            messagebox.showinfo("Success", f"Command executed successfully, output printed in terminal.")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def wlan_info(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = "iw dev wlan0 info"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def cloud_enable(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = "systemctl start ba-cloudagent.service"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+            messagebox.showinfo("Success", f"Command executed successfully, output printed in terminal.")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def cloud_disable(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = "systemctl stop ba-cloudagent.service"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+            messagebox.showinfo("Success", f"Command executed successfully, output printed in terminal.")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def cloud_info(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = "systemctl status ba-cloudagent.service"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def print_all_active_services(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = "systemctl list-units --type=service"
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
 
 class ToolTip:
     def __init__(self, widget, text, x_offset=5, y_offset=5, position='right'):

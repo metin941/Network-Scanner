@@ -37,6 +37,79 @@ class InfoWin:
         dev_info_label = Label(self.root, text=info_text, justify=LEFT, wraplength=380)  # Wrap text within the window
         dev_info_label.place(x=15, y=24)
 
+class SetAccess:
+
+    def __init__(self):
+        self.config = configparser.ConfigParser()
+        self.config_file = 'config.ini'
+
+        self.root = Tk()
+        self.root.title("Set Access Key")
+        self.root.geometry("370x130")
+        self.root.resizable(False, False)
+        blank_icon = PhotoImage(width=1, height=1)
+
+        self.set_access_widgets()
+    
+    def set_access_widgets(self):
+        frame_access = LabelFrame(self.root, text="Select Key and Username", padx=10, pady=10)
+        frame_access.place(x=10, y=0, width=350, height=85)
+
+        username_label = Label(self.root, text="Login username:")
+        username_label.place(x=15, y=24)
+        self.username_entry = Entry(self.root, width=20)
+        self.username_entry.place(x=130, y=24)
+        self.add_tooltip(self.username_entry, "Set username for SSH")
+
+        set_user_button = Button(self.root, text="Set User", command=self.create_or_update_config_username)
+        set_user_button.place(x=270, y=20)
+
+        key_label = Label(self.root, text="Select PEM Key:")
+        key_label.place(x=15, y=54)
+        set_key_button = Button(self.root, text="Select", command=self.create_or_update_config_key)
+        set_key_button.place(x=130, y=50)
+
+    def create_or_update_config_key(self):
+        key_path = filedialog.askopenfilename(title="Select Private Key",
+                                              filetypes=(("PEM files", "*.pem"), ("All files", "*.*")))
+        if not key_path:
+            messagebox.showerror("Error", "No key file selected!")
+            return
+
+        if not os.path.exists(self.config_file):
+            with open(self.config_file, 'w') as f:
+                f.write("[settings]\n")
+
+        self.config.read(self.config_file)
+        if not self.config.has_section('settings'):
+            self.config.add_section('settings')
+
+        self.config.set('settings', 'key_path', key_path)
+        with open(self.config_file, 'w') as configfile:
+            self.config.write(configfile)
+
+        messagebox.showinfo("Config", f"Config file updated with key_path: {key_path}")
+
+    def create_or_update_config_username(self):
+        user = self.username_entry.get()
+
+        if not os.path.exists(self.config_file):
+            with open(self.config_file, 'w') as f:
+                f.write("[settings]\n")
+
+        self.config.read(self.config_file)
+        if not self.config.has_section('settings'):
+            self.config.add_section('settings')
+
+        self.config.set('settings', 'user', user)
+        with open(self.config_file, 'w') as configfile:
+            self.config.write(configfile)
+
+        messagebox.showinfo("Config", f"Config file updated with username")
+
+    def add_tooltip(self, widget, text):
+        ToolTip(widget, text)
+
 class FirmwareTool:
 
     def __init__(self):
@@ -56,7 +129,7 @@ class FirmwareTool:
     
     def init_menubar(self):
         menubar = Menu(self.root)
-        menubar.add_cascade(label="Select ssh key", command=self.create_or_update_config)
+        menubar.add_cascade(label="Set Access", command=self.open_access_window)
         self.root.config(menu=menubar)
 
     def init_widgets(self):
@@ -199,32 +272,10 @@ class FirmwareTool:
         self.terminal.insert(END, "\n")  # Add newline
         self.terminal.see(END)  # Auto-scroll to latest message
 
-    def create_or_update_config(self):
-        key_path = filedialog.askopenfilename(title="Select Private Key",
-                                              filetypes=(("PEM files", "*.pem"), ("All files", "*.*")))
-        if not key_path:
-            messagebox.showerror("Error", "No key file selected!")
-            return
-
-        if not os.path.exists(self.config_file):
-            with open(self.config_file, 'w') as f:
-                f.write("[settings]\n")
-
-        self.config.read(self.config_file)
-        if not self.config.has_section('settings'):
-            self.config.add_section('settings')
-
-        self.config.set('settings', 'key_path', key_path)
-        with open(self.config_file, 'w') as configfile:
-            self.config.write(configfile)
-
-        self.append_to_terminal(f"Config file '{self.config_file}' updated with key_path: {key_path}")
-        messagebox.showinfo("Config", f"Config file updated with key_path: {key_path}")
-
     def connect_and_upload(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -234,6 +285,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -258,7 +310,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Initialize the progress bar
             file_size = os.path.getsize(file_path)
@@ -303,7 +355,7 @@ class FirmwareTool:
     def create_ready_file(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
         target_file = "/opt/sysone/s1pdata/fwupgrade/fw_update.ready"
 
         if not hostname:
@@ -317,6 +369,7 @@ class FirmwareTool:
             try:
                 self.config.read(self.config_file)
                 key_path = self.config.get('settings', 'key_path')
+                user = self.config.get('settings', 'user')
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to read key path from config: {e}")
                 return
@@ -331,7 +384,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             command = f"touch {target_file}"
             self.append_to_terminal(f"Executing command: {command}")
@@ -359,7 +412,7 @@ class FirmwareTool:
     def send_fs_print_command(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -369,6 +422,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -386,7 +440,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Send the fs-print command
             command = "fs-print"
@@ -415,7 +469,7 @@ class FirmwareTool:
     def set_development_environment(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -425,6 +479,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -442,7 +497,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Send the fw_setenv command
             command = "fw_setenv target_env development"
@@ -476,7 +531,7 @@ class FirmwareTool:
     def factory_reset(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -486,6 +541,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -503,7 +559,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # First command: touch /data/.factory-reset
             command1 = "touch /data/.factory-reset"
@@ -552,7 +608,7 @@ class FirmwareTool:
     def print_journalctl(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -562,6 +618,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -579,7 +636,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Execute command
             command1 = "journalctl -b0"
@@ -618,7 +675,7 @@ class FirmwareTool:
     def print_journalctl_rau(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -628,6 +685,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -645,7 +703,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Execute command
             command1 = "cat /var/log/messages"
@@ -684,7 +742,7 @@ class FirmwareTool:
     def factory_reset_rau(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -694,6 +752,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -711,7 +770,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # First command: touch /data/.factory-reset
             command1 = "/opt/sysone/s1exe/etc/unconfigure.sh"
@@ -760,7 +819,7 @@ class FirmwareTool:
     def wlan_enable(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -770,6 +829,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -787,7 +847,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Send the fs-print command
             command = "ccp-wifi-on"
@@ -817,7 +877,7 @@ class FirmwareTool:
     def wlan_disable(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -827,6 +887,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -844,7 +905,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             command = "ccp-wifi-off"
             self.append_to_terminal(f"Executing command: {command}")
@@ -873,7 +934,7 @@ class FirmwareTool:
     def wlan_info(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -883,6 +944,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -900,7 +962,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             command = "iw dev wlan0 info"
             self.append_to_terminal(f"Executing command: {command}")
@@ -928,7 +990,7 @@ class FirmwareTool:
     def cloud_restart(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -938,6 +1000,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -955,7 +1018,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             # Restart the ba-cloudagent service
             restart_command = "systemctl restart ba-cloudagent.service"
@@ -979,7 +1042,7 @@ class FirmwareTool:
     def cloud_info(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -989,6 +1052,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -1006,7 +1070,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
             self.append_to_terminal("==========================================================================")
             # Read the configuration file
             conf_command = "cat /etc/ba-cloudagent/ba-cloudagent/ba-cloudagent.conf"
@@ -1051,7 +1115,7 @@ class FirmwareTool:
     def print_all_active_services(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -1061,6 +1125,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -1078,7 +1143,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             command = "systemctl list-units --type=service"
             self.append_to_terminal(f"Executing command: {command}")
@@ -1106,7 +1171,7 @@ class FirmwareTool:
     def print_tasks(self):
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -1116,6 +1181,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -1133,7 +1199,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             command = "top -b -n 1 | head -50"
             self.append_to_terminal(f"Executing command: {command}")
@@ -1162,7 +1228,7 @@ class FirmwareTool:
         hostname = self.hostname_entry.get()  # Device IP entered by the user
         COMMAND = self.send_command_entry.get()
         port = 22
-        username = "root"
+        #username = "root"
 
         if not hostname:
             messagebox.showerror("Error", "Device IP is required!")
@@ -1172,6 +1238,7 @@ class FirmwareTool:
         try:
             self.config.read(self.config_file)
             key_path = self.config.get('settings', 'key_path')
+            user = self.config.get('settings', 'user')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read key path from config: {e}")
             return
@@ -1189,7 +1256,7 @@ class FirmwareTool:
             ssh.load_system_host_keys()
 
             # Force SSH Protocol 2
-            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+            ssh.connect(hostname, port, username=user, key_filename=key_path, look_for_keys=False, allow_agent=False)
 
             command = COMMAND
             self.append_to_terminal(f"Executing command: {command}")
@@ -1213,6 +1280,10 @@ class FirmwareTool:
         except Exception as e:
             self.append_to_terminal(f"Error: {e}")
             messagebox.showerror("Error", f"Failed to execute command: {e}")
+
+    def open_access_window(self):
+        access_window = SetAccess()
+        access_window.run()
 
 class ToolTip:
     def __init__(self, widget, text, x_offset=5, y_offset=5, position='right'):
@@ -1466,7 +1537,7 @@ class NetworkScannerApp:
         return "\n".join(formatted_lines)
 
     def create_copyright_label(self):
-        copyright_text = "v1.9 © M.Hasanov 2025"
+        copyright_text = "v2.0 © M.Hasanov 2025"
         
         # Function to open the GitHub page when the label is clicked
         def open_github(event):

@@ -71,6 +71,15 @@ class FirmwareTool:
         self.hostname_entry.place(x=85, y=24)
         self.add_tooltip(self.hostname_entry, "Enter a specific Device IP address (e.g., 10.170.194.179)")
 
+        send_command_label = Label(self.root, text="Command:")
+        send_command_label.place(x=15, y=54)
+        self.send_command_entry = Entry(self.root, width=20)
+        self.send_command_entry.place(x=85, y=54)
+
+        button_send_command = Button(self.root, text="->", command=self.send_command)
+        button_send_command.place(x=212, y=50, width=20)
+
+
         # Create a bordered frame for categorized buttons
         button_frame_fw = LabelFrame(self.root, text="Firmware Uplad & Upgrade", padx=10, pady=10)
         button_frame_fw.place(x=240, y=0, width=210, height=85)
@@ -1149,6 +1158,62 @@ class FirmwareTool:
             self.append_to_terminal(f"Error: {e}")
             messagebox.showerror("Error", f"Failed to execute command: {e}")
 
+    def send_command(self):
+        hostname = self.hostname_entry.get()  # Device IP entered by the user
+        COMMAND = self.send_command_entry.get()
+        port = 22
+        username = "root"
+
+        if not hostname:
+            messagebox.showerror("Error", "Device IP is required!")
+            return
+
+        # Read key_path from the config file
+        try:
+            self.config.read(self.config_file)
+            key_path = self.config.get('settings', 'key_path')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read key path from config: {e}")
+            return
+
+        if not key_path:
+            messagebox.showerror("Error", "No key path found in config file!")
+            return
+
+        try:
+            self.append_to_terminal("Connecting to device...")
+
+            # Create SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto accept unknown host keys
+            ssh.load_system_host_keys()
+
+            # Force SSH Protocol 2
+            ssh.connect(hostname, port, username, key_filename=key_path, look_for_keys=False, allow_agent=False)
+
+            command = COMMAND
+            self.append_to_terminal(f"Executing command: {command}")
+            stdin, stdout, stderr = ssh.exec_command(command)
+
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+
+            if error:
+                self.append_to_terminal(f"Error: {error}")
+                raise Exception(error)
+
+            self.append_to_terminal(f"Command Output: {output}")
+
+        except paramiko.ssh_exception.AuthenticationException:
+            self.append_to_terminal("Error: Authentication failed. Check your private key or username.")
+            messagebox.showerror("Error", "Authentication failed. Check your private key or username.")
+        except paramiko.ssh_exception.SSHException as e:
+            self.append_to_terminal(f"Error: SSH connection failed: {e}")
+            messagebox.showerror("Error", f"SSH connection failed: {e}")
+        except Exception as e:
+            self.append_to_terminal(f"Error: {e}")
+            messagebox.showerror("Error", f"Failed to execute command: {e}")
+
 class ToolTip:
     def __init__(self, widget, text, x_offset=5, y_offset=5, position='right'):
         self.widget = widget
@@ -1401,7 +1466,7 @@ class NetworkScannerApp:
         return "\n".join(formatted_lines)
 
     def create_copyright_label(self):
-        copyright_text = "v1.8 © M.Hasanov 2025"
+        copyright_text = "v1.9 © M.Hasanov 2025"
         
         # Function to open the GitHub page when the label is clicked
         def open_github(event):
